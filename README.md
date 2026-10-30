@@ -1,6 +1,6 @@
 # AI Professional Networking Matcher
 
-A typed, immutable, and production-structured intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
+An intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
 
 ---
 
