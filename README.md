@@ -1,6 +1,6 @@
 # AI Professional Networking Matcher
 
-A lightweight, robust intro matcher designed for professional networking and community platforms to connect members intelligently based on unstructured queries.
+A lightweight, robust intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
 
 ---
 
