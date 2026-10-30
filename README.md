@@ -1,55 +1,96 @@
 # AI Professional Networking Matcher
 
-A compact (<40 lines), production-minded intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
+A typed, immutable, and production-structured intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
 
 ---
 
-## Part 1: Mini Intro Matcher (31 Lines)
+## Part 1: Mini Intro Matcher
 
 Given a query such as `"I need a backend engineer who has worked on payments"`, the matcher analyzes candidate profiles, computes weighted relevance scores across structured fields, and returns the top 3 matches with clear, human-readable match rationales.
 
 ```python
 import re
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Profile:
+    name: str
+    title: str
+    skills: tuple[str, ...]
+    location: str
+
+@dataclass(frozen=True)
+class Match:
+    profile: Profile
+    score: float
+    hits: tuple[str, ...]
+
+STOP = {"i", "need", "a", "an", "who", "has", "worked", "on", "in", "with",
+        "for", "the", "to", "and", "of", "me", "someone", "looking", "find"}
+ALIASES = {"stripe": "payments"}
+WEIGHTS = {"skill": 3.0, "title": 2.5, "loc": 1.0}
+
+def _norm(w: str) -> str:
+    w = ALIASES.get(w, w)
+    return w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+
+def tokenize(text: str) -> set[str]:
+    return {_norm(w) for w in re.findall(r"\w+", text.lower()) if w not in STOP}
 
 PROFILES = [
-    ("Priya", "Staff Engineer, fintech", ["Python", "payments", "Kafka"], "Bangalore"),
-    ("Daniel", "Product Designer", ["Figma", "design systems", "mobile"], "San Francisco"),
-    ("Mei", "Backend Engineer", ["Go", "payments", "Postgres"], "Singapore"),
-    ("Arjun", "ML Engineer", ["PyTorch", "ranking", "recommendations"], "Palo Alto"),
-    ("Sofia", "Founder, climate tech", ["fundraising", "ops", "hiring"], "London"),
-    ("Wei", "Full-stack Engineer", ["TypeScript", "React", "Stripe"], "Singapore"),
+    Profile("Priya", "Staff Engineer, fintech", ("Python", "payments", "Kafka"), "Bangalore"),
+    Profile("Daniel", "Product Designer", ("Figma", "design systems", "mobile"), "San Francisco"),
+    Profile("Mei", "Backend Engineer", ("Go", "payments", "Postgres"), "Singapore"),
+    Profile("Arjun", "ML Engineer", ("PyTorch", "ranking", "recommendations"), "Palo Alto"),
+    Profile("Sofia", "Founder, climate tech", ("fundraising", "ops", "hiring"), "London"),
+    Profile("Wei", "Full-stack Engineer", ("TypeScript", "React", "Stripe"), "Singapore"),
 ]
-STOP = {"i", "need", "a", "an", "who", "has", "worked", "on", "in", "with", "for", "the"}
-ALIASES = {"stripe": "payments"}
 
-def match(query: str, top_k: int = 3):
-    tokens = {ALIASES.get(w, w) for w in re.findall(r"\w+", query.lower()) if w not in STOP}
-    if not tokens: return []
-    ranked = []
-    for name, title, skills, loc in PROFILES:
-        t_hits = tokens & set(re.findall(r"\w+", title.lower()))
-        s_hits = (tokens & {ALIASES.get(w, w) for s in skills for w in re.findall(r"\w+", s.lower())}) - t_hits
-        l_hits = tokens & set(re.findall(r"\w+", loc.lower()))
-        score = len(s_hits) * 3.0 + len(t_hits) * 2.5 + len(l_hits) * 1.0
+def match(query: str, top_k: int = 3) -> list[Match]:
+    tokens = tokenize(query)
+    if not tokens or top_k <= 0:
+        return []
+    results = []
+    for p in PROFILES:
+        fields = {
+            "skill": tokenize(" ".join(p.skills)),
+            "title": tokenize(p.title),
+            "loc": tokenize(p.location),
+        }
+        score, hits = 0.0, []
+        for t in sorted(tokens):
+            w = max((WEIGHTS[f] for f, toks in fields.items() if t in toks), default=0.0)
+            if w:
+                score += w
+                hits.append(t)
         if score > 0:
-            hits = ", ".join(t_hits | s_hits | l_hits)
-            ranked.append((-score, name, f"{score:.1f} | Matches on {hits} ({title}; {', '.join(skills)})"))
-    return [f"{name} (Score: {msg})" for _, name, msg in sorted(ranked)[:top_k]]
+            results.append(Match(p, score, tuple(hits)))
+    results.sort(key=lambda m: (-m.score, m.profile.name))
+    return results[:top_k]
+
+def format_match(m: Match) -> str:
+    p = m.profile
+    return (f"{p.name} (Score: {m.score:.1f} | Matches on {', '.join(m.hits)} "
+            f"({p.title}; {', '.join(p.skills)}))")
 
 if __name__ == "__main__":
     q = "I need a backend engineer who has worked on payments"
-    print(f"Query: {q}")
-    for res in match(q): print(f" - {res}")
+    print(f"Query: \"{q}\"")
+    for m in match(q):
+        print(f" - {format_match(m)}")
 ```
 
 ### Key Design Decisions & Edge Cases
-- **Field-Weighted Scoring**: Skills ($3.0\times$), Role/Title ($2.5\times$), Location ($1.0\times$). Direct skills and domain experience are prioritized over geographical mention.
-- **Domain Synonym Expansion**: Expands company/tool indicators to domain concepts (e.g., `Stripe` $\leftrightarrow$ `payments`) so candidates like Wei are appropriately surfaced.
+- **Typed & Immutable (`@dataclass(frozen=True)`)**: Separates data retrieval (`Match`) from user presentation (`format_match`).
+- **No Over-Counting via Max Field Weight**: A query term appearing in both a candidate's title and skills receives the highest applicable field weight (`skill` > `title` > `loc`) rather than falsely inflating scores.
+- **Normalization & Stemming**: `_norm(w)` collapses plurals (`payment` $\leftrightarrow$ `payments`) while preserving short terms like `ops` via length bounds.
+- **Domain Synonym Expansion**: Expands company/tool indicators to domain concepts (e.g., `Stripe` $\leftrightarrow$ `payments`).
 - **Edge Cases Handled**:
-  - **Empty queries or whitespace**: Returns an empty match list `[]`.
-  - **Stopwords-only queries**: Filtered out to avoid false keyword collisions.
-  - **Zero matches**: Gracefully returns `[]`.
-  - **Deterministic Tie-Breaking**: Ordered by `(-score, name)` to avoid nondeterministic ranking jitter.
+  - Empty or whitespace-only queries.
+  - Queries with non-positive `top_k` limits (`top_k <= 0`).
+  - Stopword-only queries.
+  - Zero-match queries.
+  - Deterministic tie-breaking on `(-m.score, m.profile.name)`.
 
 ### Running the Code
 
@@ -63,10 +104,10 @@ python3 -m unittest -v test_intro_matcher.py
 
 #### Output:
 ```text
-Query: I need a backend engineer who has worked on payments
- - Mei (Score: 8.0 | Matches on payments, engineer, backend (Backend Engineer; Go, payments, Postgres))
- - Priya (Score: 5.5 | Matches on engineer, payments (Staff Engineer, fintech; Python, payments, Kafka))
- - Wei (Score: 5.5 | Matches on engineer, payments (Full-stack Engineer; TypeScript, React, Stripe))
+Query: "I need a backend engineer who has worked on payments"
+ - Mei (Score: 8.0 | Matches on backend, engineer, payment (Backend Engineer; Go, payments, Postgres))
+ - Priya (Score: 5.5 | Matches on engineer, payment (Staff Engineer, fintech; Python, payments, Kafka))
+ - Wei (Score: 5.5 | Matches on engineer, payment (Full-stack Engineer; TypeScript, React, Stripe))
 ```
 
 ---
