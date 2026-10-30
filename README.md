@@ -1,20 +1,46 @@
 # AI Professional Networking Matcher
 
-A lightweight, robust intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
+A compact (<40 lines), production-minded intro matcher designed for professional networking and community platforms to connect members intelligently based on user queries.
 
 ---
 
-## Part 1: Mini Intro Matcher
+## Part 1: Mini Intro Matcher (31 Lines)
 
 Given a query such as `"I need a backend engineer who has worked on payments"`, the matcher analyzes candidate profiles, computes weighted relevance scores across structured fields, and returns the top 3 matches with clear, human-readable match rationales.
 
-### Candidate Profiles
-1. **Priya** | Staff Engineer, fintech | Python, payments, Kafka | Bangalore
-2. **Daniel** | Product Designer | Figma, design systems, mobile | San Francisco
-3. **Mei** | Backend Engineer | Go, payments, Postgres | Singapore
-4. **Arjun** | ML Engineer | PyTorch, ranking, recommendations | Palo Alto
-5. **Sofia** | Founder, climate tech | fundraising, ops, hiring | London
-6. **Wei** | Full-stack Engineer | TypeScript, React, Stripe | Singapore
+```python
+import re
+
+PROFILES = [
+    ("Priya", "Staff Engineer, fintech", ["Python", "payments", "Kafka"], "Bangalore"),
+    ("Daniel", "Product Designer", ["Figma", "design systems", "mobile"], "San Francisco"),
+    ("Mei", "Backend Engineer", ["Go", "payments", "Postgres"], "Singapore"),
+    ("Arjun", "ML Engineer", ["PyTorch", "ranking", "recommendations"], "Palo Alto"),
+    ("Sofia", "Founder, climate tech", ["fundraising", "ops", "hiring"], "London"),
+    ("Wei", "Full-stack Engineer", ["TypeScript", "React", "Stripe"], "Singapore"),
+]
+STOP = {"i", "need", "a", "an", "who", "has", "worked", "on", "in", "with", "for", "the"}
+ALIASES = {"stripe": "payments"}
+
+def match(query: str, top_k: int = 3):
+    tokens = {ALIASES.get(w, w) for w in re.findall(r"\w+", query.lower()) if w not in STOP}
+    if not tokens: return []
+    ranked = []
+    for name, title, skills, loc in PROFILES:
+        t_hits = tokens & set(re.findall(r"\w+", title.lower()))
+        s_hits = (tokens & {ALIASES.get(w, w) for s in skills for w in re.findall(r"\w+", s.lower())}) - t_hits
+        l_hits = tokens & set(re.findall(r"\w+", loc.lower()))
+        score = len(s_hits) * 3.0 + len(t_hits) * 2.5 + len(l_hits) * 1.0
+        if score > 0:
+            hits = ", ".join(t_hits | s_hits | l_hits)
+            ranked.append((-score, name, f"{score:.1f} | Matches on {hits} ({title}; {', '.join(skills)})"))
+    return [f"{name} (Score: {msg})" for _, name, msg in sorted(ranked)[:top_k]]
+
+if __name__ == "__main__":
+    q = "I need a backend engineer who has worked on payments"
+    print(f"Query: {q}")
+    for res in match(q): print(f" - {res}")
+```
 
 ### Key Design Decisions & Edge Cases
 - **Field-Weighted Scoring**: Skills ($3.0\times$), Role/Title ($2.5\times$), Location ($1.0\times$). Direct skills and domain experience are prioritized over geographical mention.
@@ -23,11 +49,9 @@ Given a query such as `"I need a backend engineer who has worked on payments"`, 
   - **Empty queries or whitespace**: Returns an empty match list `[]`.
   - **Stopwords-only queries**: Filtered out to avoid false keyword collisions.
   - **Zero matches**: Gracefully returns `[]`.
-  - **Deterministic Tie-Breaking**: Ordered by `(-score, profile.name)` to avoid nondeterministic ranking jitter.
+  - **Deterministic Tie-Breaking**: Ordered by `(-score, name)` to avoid nondeterministic ranking jitter.
 
 ### Running the Code
-
-Requires Python 3.8+ (standard library only, zero external dependencies).
 
 ```bash
 # Run the demo queries
@@ -37,21 +61,12 @@ python3 intro_matcher.py
 python3 -m unittest -v test_intro_matcher.py
 ```
 
-#### Sample Output:
+#### Output:
 ```text
-Query: "I need a backend engineer who has worked on payments"
-  1. Mei (Score: 8.5) | Matches on backend, engineer, payments (Backend Engineer with Go, payments, Postgres)
-  2. Priya (Score: 5.5) | Matches on engineer, payments (Staff Engineer, fintech with Python, payments, Kafka)
-  3. Wei (Score: 5.5) | Matches on engineer, payments (Full-stack Engineer with TypeScript, React, Stripe)
-
-Query: "Looking for a designer in San Francisco"
-  1. Daniel (Score: 4.5) | Matches on designer, san, francisco (Product Designer with Figma, design systems, mobile)
-
-Query: ""
-  No matching profiles found.
-
-Query: "Rust and blockchain expert"
-  No matching profiles found.
+Query: I need a backend engineer who has worked on payments
+ - Mei (Score: 8.0 | Matches on payments, engineer, backend (Backend Engineer; Go, payments, Postgres))
+ - Priya (Score: 5.5 | Matches on engineer, payments (Staff Engineer, fintech; Python, payments, Kafka))
+ - Wei (Score: 5.5 | Matches on engineer, payments (Full-stack Engineer; TypeScript, React, Stripe))
 ```
 
 ---
