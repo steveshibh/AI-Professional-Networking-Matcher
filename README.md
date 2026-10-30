@@ -21,7 +21,7 @@ Given a query such as `"I need a backend engineer who has worked on payments"`, 
 - **Domain Synonym Expansion**: Expands company/tool indicators to domain concepts (e.g., `Stripe` $\leftrightarrow$ `payments`) so candidates like Wei are appropriately surfaced.
 - **Edge Cases Handled**:
   - **Empty queries or whitespace**: Returns an empty match list `[]`.
-  - **Stopwords-only queries**: Filtered out to avoid spurious keyword collisions.
+  - **Stopwords-only queries**: Filtered out to avoid false keyword collisions.
   - **Zero matches**: Gracefully returns `[]`.
   - **Deterministic Tie-Breaking**: Ordered by `(-score, profile.name)` to avoid nondeterministic ranking jitter.
 
